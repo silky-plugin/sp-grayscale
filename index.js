@@ -13,6 +13,7 @@ const indexOf = (arr, item)=>{
 }
 
 function isIgnore(ignoreRules, path){
+    if(!ignoreRules){return false}
     ignoreRules = [].concat(ignoreRules)
     for(let i = 0, len = ignoreRules.length; i < len; i++){
         if(path.indexOf(ignoreRules[i]) != "-1"){
@@ -26,10 +27,20 @@ function isIgnore(ignoreRules, path){
     }
     return false
 }
+//忽略灰度
+function willBuildHook(buildConfig, cb){
+    if(!buildConfig.ignore){
+        buildConfig.ignore = []
+    }
+    buildConfig.ignore.push(".+\.gray\.[A-z]+$")
+    cb(null, buildConfig)
+}
 
 exports.registerPlugin = function(cli, options){
+    options = options ||{}
     if(indexOf(process.argv, "-G") == -1){
         cli.log.info("未使用 -G 参数，忽略灰度替换")
+        cli.registerHook("build:willBuild", willBuildHook)
         return
     }
     let hbsRoot = cli.options.pluginsConfig["sp-hbs"] ?  cli.options.pluginsConfig["sp-hbs"].root : ""
@@ -47,7 +58,7 @@ exports.registerPlugin = function(cli, options){
                 break;
             case ".js":
                 reg = /js$/
-                probable = ["js", "es6", "coffee"]
+                probable = ["js", "es6", "coffee", "ts"]
                 break
             case ".css":
                 reg = /css$/
@@ -62,11 +73,26 @@ exports.registerPlugin = function(cli, options){
         for(let i =0, len = probable.length; i < len; i++){
             let probableFile =  fakeFilePath.replace(reg, `gray.${probable[i]}`)
             if(_fs.existsSync(probableFile)){
-                req.path = pathname.replace(reg, `gray${ext}`)
-                console.log(req.path , 1)
+                data.realPath =  req.path = pathname.replace(reg, `gray${ext}`)
                 break
             }
         }
         cb(null, content)
     }, -1)
+    //覆盖
+    cli.registerHook('build:doCompile', (buildConfig, data, content, cb)=>{
+        console.log(data)
+        let inputFilePath = data.inputFilePath
+        let outputFilePath = data.outputFilePath
+        if(/.+\.gray\.[A-z]+$/.test(inputFilePath)){
+            data.outputFilePath = outputFilePath.replace(/\.gray\.([A-z]+)$/, ".$1")
+            data.outputFileRelativePath = data.outputFileRelativePath.replace(/\.gray\.([A-z]+)$/, ".$1")
+        }else{
+            let tempGrayFilePath = inputFilePath.replace(/\.([A-z]+)$/, ".gray.$1")
+            if(_fs.existsSync(tempGrayFilePath)){
+                data.ignore = true
+            }
+        }
+        cb(null, content)
+    },1)
 }
